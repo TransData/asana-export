@@ -10,6 +10,7 @@ import sys
 import signal
 import threading
 import time
+import logging
 from pathlib import Path
 from datetime import datetime
 
@@ -29,32 +30,23 @@ from rich.columns import Columns
 from rich import box
 
 import config
+from config import MAX_SUBTASK_DEPTH
 import state
 import fetcher
 
 console = Console()
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  CUSTOM ANIMATED BAR — "Water Pipe" Effect
+#  PIP-STYLE PROGRESS BAR
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Water pipe gradient: dark navy → ocean blue → cyan
-WATER_COLORS = [
-    "#0a1628", "#0d1f3c", "#102a50", "#133564",
-    "#1a4480", "#1e5799", "#2176cc", "#2196f3",
-    "#29b6f6", "#4fc3f7", "#81d4fa", "#00e5ff",
-]
-
-
-class WaterPipeColumn(BarColumn):
-    """A progress bar that looks like water flowing through a pipe."""
+class PipStyleColumn(BarColumn):
+    """Progress bar mimicking pip's style: ━━━━━━━━━━━━━━━╸━━━━━━━━"""
 
     def __init__(self, bar_width=40, **kwargs):
         super().__init__(bar_width=bar_width, **kwargs)
-        self._tick = 0
 
     def render(self, task):
-        self._tick += 1
         completed = task.completed
         total = task.total or 1
         ratio = min(completed / total, 1.0)
@@ -65,33 +57,50 @@ class WaterPipeColumn(BarColumn):
 
         bar = Text()
 
-        # Build the filled (water) portion with animated gradient
-        for i in range(filled):
-            # Shift color index based on tick for animation
-            color_idx = (i + self._tick // 2) % len(WATER_COLORS)
-            char = "█"
-            bar.append(char, style=Style(color=WATER_COLORS[color_idx]))
+        # Filled portion — bright green thick dash
+        if filled > 0:
+            bar.append("━" * filled, style=Style(color="#00e676"))
 
-        # Leading edge — the "wave front" with lighter characters
-        if filled < bar_width and filled > 0:
-            wave_chars = ["▓", "▒", "░"]
-            wave_colors = ["#4fc3f7", "#29b6f6", "#1a4480"]
-            for j, (ch, col) in enumerate(zip(wave_chars, wave_colors)):
-                if filled + j < bar_width:
-                    bar.append(ch, style=Style(color=col))
-                    empty -= 1
+        # Leading edge — half-filled indicator
+        if filled < bar_width:
+            if filled > 0:
+                bar.append("╸", style=Style(color="#00e676"))
+                empty -= 1
+            # Empty portion — dim dark dash
+            if empty > 0:
+                bar.append("━" * empty, style=Style(color="#333333"))
 
-        # Empty portion
-        if empty > 0:
-            bar.append("░" * empty, style=Style(color="#1a1a2e"))
+        return bar
 
-        # Pipe edges
-        result = Text()
-        result.append("┃", style=Style(color="#455a64"))
-        result.append_text(bar)
-        result.append("┃", style=Style(color="#455a64"))
 
-        return result
+# ═══════════════════════════════════════════════════════════════════════════════
+#  LOGGING SETUP
+# ═══════════════════════════════════════════════════════════════════════════════
+
+log = logging.getLogger("asana_export")
+log.setLevel(logging.DEBUG)
+
+# Suppress logs to console (Rich handles display)
+_null_handler = logging.NullHandler()
+log.addHandler(_null_handler)
+
+
+def setup_file_logging(export_dir: Path):
+    """Add a file handler that writes to exports/<run_id>/export.log."""
+    # Remove old file handlers
+    for h in log.handlers[:]:
+        if isinstance(h, logging.FileHandler):
+            log.removeHandler(h)
+
+    log_path = export_dir / "export.log"
+    fh = logging.FileHandler(log_path, encoding="utf-8")
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(logging.Formatter(
+        "%(asctime)s  %(levelname)-8s  %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
+    log.addHandler(fh)
+    return log_path
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -266,7 +275,7 @@ def run_export(resume: bool = False):
     progress = Progress(
         SpinnerColumn(spinner_name="dots", style="#00e5ff"),
         TextColumn("[bold #2196f3]{task.description}[/]", justify="left"),
-        WaterPipeColumn(bar_width=35),
+        PipStyleColumn(bar_width=35),
         TaskProgressColumn(),
         MofNCompleteColumn(),
         TimeElapsedColumn(),
