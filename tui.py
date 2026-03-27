@@ -258,6 +258,13 @@ def run_export(resume: bool = False):
         export_dir.mkdir(parents=True, exist_ok=True)
         run_id = st["run_id"]
 
+    log_path = setup_file_logging(export_dir)
+    log.info(f"Starting export run. Output dir: {export_dir}")
+    log.debug(f"Configuration: Workers={config.MAX_WORKERS}, "
+              f"Attachments={config.DOWNLOAD_ATTACHMENTS}, "
+              f"Skip Archived={config.SKIP_ARCHIVED_PROJECTS}, "
+              f"Resume={resume}")
+
     projects_dir = export_dir / "projects"
     projects_dir.mkdir(parents=True, exist_ok=True)
     attachments_dir = (export_dir / "attachments") if config.DOWNLOAD_ATTACHMENTS else None
@@ -368,11 +375,13 @@ def run_export(resume: bool = False):
     try:
         with progress:
             # 1) Fetch workspaces
+            log.info("Fetching workspaces...")
             progress.update(ws_task, description="🏢 Workspaces — fetching")
             workspaces = fetcher.fetch_workspaces()
             progress.update(ws_task, total=len(workspaces))
 
             if not workspaces:
+                log.warning("No workspaces found.")
                 progress.console.print("[red]No workspaces found![/]")
                 return
 
@@ -402,8 +411,10 @@ def run_export(resume: bool = False):
 
                 progress.update(ws_task, description=f"🏢 {ws['name'][:25]}")
                 st["current_workspace_gid"] = ws["gid"]
+                log.info(f"Processing workspace: {ws['name']} ({ws['gid']})")
 
                 # 2) Fetch projects
+                log.info(f"Fetching projects for workspace {ws['name']}...")
                 progress.update(proj_task, description="📁 Projects — fetching")
                 projects = fetcher.fetch_projects(ws["gid"])
                 progress.update(proj_task, total=len(projects), completed=0)
@@ -433,12 +444,15 @@ def run_export(resume: bool = False):
                         description=f"📁 {proj['name'][:25]}",
                     )
                     st["current_project_gid"] = proj["gid"]
+                    log.info(f"  Processing project: {proj['name']} ({proj['gid']})")
 
                     # Sections
                     pause_event.wait()
+                    log.debug(f"    Fetching sections for project {proj['gid']}")
                     proj["sections"] = fetcher.fetch_sections(proj["gid"])
 
                     # 3) Fetch tasks
+                    log.debug(f"    Fetching tasks list for project {proj['name']}...")
                     progress.update(task_task, description="📋 Tasks — fetching list")
                     tasks_raw = fetcher.fetch_project_tasks(proj["gid"])
                     progress.update(task_task, total=len(tasks_raw), completed=0)
@@ -452,6 +466,7 @@ def run_export(resume: bool = False):
                     progress.update(sub_task, total=max(total_subs, 1))
 
                     # 4) Enrich tasks concurrently
+                    log.info(f"    Enriching {len(tasks_raw)} tasks concurrently...")
                     enriched = fetcher.enrich_tasks_concurrent(
                         tasks_raw, attachments_dir,
                         pause_event, stop_event,
@@ -475,6 +490,7 @@ def run_export(resume: bool = False):
                     ws_data["projects"].append(proj)
 
                     # Mark project complete
+                    log.debug(f"    Completed project {proj['name']}. Saving state & JSON.")
                     completed_projects.add(proj["gid"])
                     st["completed_projects"] = list(completed_projects)
                     st["master_data"] = master
@@ -507,14 +523,17 @@ def run_export(resume: bool = False):
         return
 
     # Write master JSON
+    log.info("Writing master JSON file...")
     master_path = export_dir / "master_export.json"
     _write_json(master_path, master)
 
     # Write CSVs
+    log.info("Generating CSV files...")
     _write_projects_csv(master, export_dir)
     _write_tasks_csvs(master, export_dir)
 
     # Mark complete
+    log.info("Export completed successfully.")
     st["status"] = "completed"
     state.save_state(st)
     state.clear_state()

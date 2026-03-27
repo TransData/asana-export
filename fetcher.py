@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from config import (
     BASE_URL, PAGE_LIMIT, RATE_LIMIT_SLEEP, MAX_SUBTASK_DEPTH,
     MAX_WORKERS, DOWNLOAD_ATTACHMENTS, TASK_OPT_FIELDS, WORKSPACE_FILTER,
+    SKIP_ARCHIVED_PROJECTS,
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -92,7 +93,7 @@ def fetch_workspaces() -> list:
 
 
 def fetch_projects(workspace_gid: str) -> list:
-    return get_all_pages("projects", {
+    projects = get_all_pages("projects", {
         "workspace": workspace_gid,
         "opt_fields": (
             "gid,name,notes,color,archived,public,created_at,modified_at,"
@@ -107,6 +108,11 @@ def fetch_projects(workspace_gid: str) -> list:
             "workspace,workspace.gid,workspace.name"
         ),
     })
+    
+    if SKIP_ARCHIVED_PROJECTS:
+        projects = [p for p in projects if not p.get("archived", False)]
+        
+    return projects
 
 
 def fetch_sections(project_gid: str) -> list:
