@@ -1,0 +1,8 @@
+exports/
+.env
+__pycache__/
+*.pyc
+.vevn/
+asana_export_*/
+asana_export_state.json
+asana_export_state.tmp
