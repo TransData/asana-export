@@ -44,7 +44,7 @@ MAX_SUBTASK_DEPTH    = 5
 DOWNLOAD_ATTACHMENTS = os.getenv("ASANA_DOWNLOAD_ATTACHMENTS", "false").lower() == "true"
 MAX_WORKERS          = int(os.getenv("ASANA_MAX_WORKERS", "4"))
 WORKSPACE_FILTER     = os.getenv("ASANA_WORKSPACE_FILTER", "")
-SKIP_ARCHIVED_PROJECTS = os.getenv("ASANA_SKIP_ARCHIVED", "false").lower() == "true"
+SKIP_ARCHIVED_PROJECTS = os.getenv("ASANA_SKIP_ARCHIVED", "true").lower() == "true"
 
 EXPORTS_DIR          = Path.cwd() / "exports"
 STATE_FILE           = Path.cwd() / "asana_export_state.json"
